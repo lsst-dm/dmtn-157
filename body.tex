@@ -1,0 +1,234 @@
+\lstdefinestyle{basherror}{
+  language=bash,
+  showspaces=false,
+  showstringspaces=false,
+  breaklines=true,
+  postbreak=\mbox{\textcolor{red}{$\hookrightarrow$}\space},
+  basicstyle= \tiny \ttfamily
+}
+
+
+\section{Introduction}
+
+In spring 2020, we started the second Proof of Concept (PoC) engagement with the Google Cloud team; see \citeds{DMTN-150} for the plans.
+This DMTN reports the Data Release Production (DRP) part of the project.
+The goal is to run batch jobs on preemptible instances and perform cost analysis for the Interim Data Facility (pre-operations production) scale and for the 10-year Operations scale.
+
+
+\section{System Architecture and Technology Stack}
+
+The overall system architecture is the same as in the AWS PoC; see \citeds{DMTN-137}.
+The LSST Science Pipelines Software Stack contains the applications for image processing and analysis.
+A machine image based on the stack release together with other necessary software is built using Packer scripts.
+The LSST Generation 3 Middleware, including Data Butler and PipelineTask framework, is used for this PoC.
+The Butler datastore is a S3 compliant storage on Google Cloud Storage (GCS); objects are accessed using the \texttt{boto3} library.
+The Butler registry is a Google Cloud SQL PostgreSQL database.
+Credentials to access the GCS bucket and the PostgreSQL instance are stored in Google Secret Manager; each machine retrieves the credentials and stores them in its local environments.
+
+
+Google Compute Engine (GCE) deployed via Terraform provides the compute resources.
+HTCondor is the underlying workload management system for batch jobs.
+Pegasus is used on top of HTCondor for workflow submission and monitoring.
+The HTCondor pool is automatically scaled with the load via a Managed Instance Group.
+The HTCondor execute machines can be either regular VMs or Preemptible VMs.
+HTCondor Annex is an alternative to acquire cloud compute resources, but we did not use HTCondor Annex in this PoC due to time constraints.
+The stackdriver-based Cloud Monitoring and the fluentd-based Cloud Logging are turned on in the HTCondor cluster.
+Pipeline logs are also sent to Cloud Logging, so we can search and examine logs in the Logs Viewer for troubleshooting.
+(Note that the logging is not fully integrated yet, but is already useful.)
+
+
+\section{Execution Results}
+
+\subsection{Test runs}
+
+Similar to \citeds{DMTN-137}, we first executed the \texttt{ci\_hsc} workflow, scaled up to process one tract HSC-RC2 dataset (\jira{DM-11345}), and then the full HSC-RC2 dataset.
+For this PoC, execution involved some manual intervention steps.
+The overall steps were: Butler repo setup, QuantumGraph generation, workflow generation, and job execution.
+To create a Butler repo on GCP after creating the GCS bucket and the PostgresSQL database, the bootstrap script at \url{https://github.com/lsst-dm/gen3-hsc-rc2} was run from the Verification Cluster located at NCSA to transfer the data to the GCS bucket and populate the Butler repo.
+We did not optimize this step and it took around 40 hours for the full HSC-RC2 repo.
+It can be improved by copying the data to the GCS first and creating the Butler repo from GCE.
+We may also parallelize the ingestion process in the future.
+
+In the Generation 3 Middleware, each executable unit is represented by a Quantum, and the DRP workflow is represented as a Quantum Graph with Quanta interdependency.
+For the execution workflow, we added one initialization job and translated Quanta into jobs in the Pegasus format with one-to-one mapping.
+For simplicity we considered all jobs of MakeWarpTask, CompareWarpAssembleCoaddTask, DeblendCoaddSourcesSingleTask, and MeasureMergedCoaddSourcesTask as large-memory jobs and required 30GB of memory.
+Pegasus also added other necessary jobs to the execution workflow, such as data transfer of Quantum files and log files.
+
+With the LSST software stack version \texttt{w\_2020\_30}, the tract \texttt{tract=9615} contains 26688 PipelineTask Quanta.
+Table \ref{tab:taskBreakdownW30} shows an example run; this is comparable to Table 1 in \citeds{DMTN-137} and most differences were likely resulted from the LSST software stack version differences.
+\input{taskBreakdown_9615_w30.tex}
+%\input{taskBreakdown_v20.tex}
+%\input{runSummaryOneTract.tex}
+
+The full HSC-RC2 dataset contains 3 tracts and around 1.5TB of input data, including 767 GB of raw images.
+Currently we ignore narrow bands, so there are 404 visits in total.
+One full HSC-RC2 workflow generates around 10TB of output data.
+Using the stack version \texttt{w\_2020\_30}, the QuantumGraph generation took around 13 hours for the full HSC-RC2 dataset, resulted in 117388 Quanta in total in our test workflow.
+We excluded patches that were not covered in all filters; this was a workaround as \texttt{CompareWarpAssembleCoaddTask} did not write out empty images which were expected in the QuantumGraph workflow.
+The pipeline configurations can be found in \url{https://github.com/lsst-dm/google-poc-drp}.
+When the workflow did not finish fully in one submission, we made a rescue workflow to run in another submission.
+The rescue workflow only contained failed jobs or their dependents.
+Making the rescue workflow required a manual step using a temporary patch in the \texttt{pipe\_base} package (\jira{DM-25809}).
+Table \ref{tab:taskBreakdownFullW30} shows an example for the full HSC-RC2 workflow.
+
+%\input{taskBreakdown_full_w30}
+%\input{taskBreakdown_full_v20}
+\input{taskBreakdown_full.tex}
+
+For the computes, we tested with GCP's first generation general-purpose machine types (N1) as well as the second generation general-purpose machine types (N2).
+N2 provides better price-performanance and is used in the IDF quotes.
+More specifically, the N1 machine \texttt{n1-standard-8} with 8 vCPUs and 30 GB of memory, and the N2 machine \texttt{n2-standard-8} with 8 vCPUs and 32 GB of memory were used.
+
+The same HSC-RC2 workflow was run with multiple setups:
+
+\begin{enumerate}
+\item
+Using regular N1 VMs as workers.  Maximum 800 CPUs simultaneously.
+\item
+Using preemptible N1 VMs as workers. Maximum 1600 CPUs simultaneously.
+\item
+Using preemptible N2 VMs as workers. Maximum 1600 CPUs simultaneously.
+\item
+Using regular N2 VMs as workers. Maximum 800 CPUs simultaneously.
+\end{enumerate}
+
+Table \ref{tab:runSummary} summarizes the compute time of the runs.
+Non-preemptible instances were used as HTCondor master and submit nodes.
+\input{runCostSummary.tex}
+
+
+\subsection{Experienced Errors}
+\begin{enumerate}
+\item \textbf{GCS 403 HTTP error}.
+Since we started large scale testing in early July, random 403 errors were received when Butler made HeadObject calls:
+\begin{lstlisting}[style=basherror]
+botocore.exceptions.ClientError: An error occurred (403) when calling the HeadObject operation: Forbidden
+\end{lstlisting}
+The stack interpreted it as
+\begin{lstlisting}[style=basherror]
+PermissionError: Forbidden HEAD operation error occurred. Verify s3:ListBucket and s3:GetObject permissions are granted for your IAM user.
+\end{lstlisting}
+However, the permission setup was the same for all jobs but only a very small fraction of jobs encountered this.
+Butler did a HeadObject to check if an object existed before attempting to upload.
+If the object did not exist it expected a 404 error.
+At the time we used \texttt{v20} stack and did not retry failed HTTP requests.
+(A request-level retry was added afterwards.)
+A Google Cloud Support Ticket was filed to investigate the root cause, and concluded that there were transient issues at the IAM server during the same timeframe.
+The instability of the IAM server was fixed on July 22.
+We have not seen this error since.
+
+
+\item  \textbf{Butler IntegrityError}
+Conflicts of datasets were found occasionally when pipelines attempted to write outputs, for example:
+\begin{lstlisting}[style=basherror]
+  File "/opt/lsst/software/stack/conda/miniconda3-py37_4.8.2/envs/lsst-scipipe-1a1d771/lib/python3.7/site-packages/sqlalchemy/engine/default.py", line 590, in do_execute
+    cursor.execute(statement, parameters)
+psycopg2.errors.UniqueViolation: duplicate key value violates unique constraint "dataset_collection_24cc_unq_dataset_type_id_collection_c55de2f4"
+DETAIL:  Key (dataset_type_id, collection_id, instrument, detector, visit)=(119, 60, HSC, 88, 1308) already exists.
+
+  File "/opt/lsst/software/stack/conda/miniconda3-py37_4.8.2/envs/lsst-scipipe-1a1d771/lib/python3.7/site-packages/sqlalchemy/engine/default.py", line 590, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.IntegrityError: (psycopg2.errors.UniqueViolation) duplicate key value violates unique constraint "dataset_collection_24cc_unq_dataset_type_id_collection_c55de2f4"
+DETAIL:  Key (dataset_type_id, collection_id, instrument, detector, visit)=(119, 60, HSC, 88, 1308) already exists.
+
+
+lsst.daf.butler.registry._exceptions.ConflictingDefinitionError: A database constraint failure was triggered by inserting one or more datasets of type DatasetType(src, {abstract_filter, instrument, detector, physical_filter, visit_system, visit}, SourceCatalog) into collection 'hfc18'. This probably means a dataset with the same data ID and dataset type already exists, but it may also mean a dimension row is missing.
+\end{lstlisting}
+
+In the scenario that a pipeline job was killed after partial outputs were written due to a machine shutdown, the follow-up process would redo the job and attempt to write all outputs.
+Butler did not allow duplicate datasets nor overwriting existing datasets, hence a conflict error occurred.
+This was expected and understood on preemptible machines; \jira{DM-26131} discusses how to handle preemption notice with a possible shutdown script and complete cleanup actions before the instance stops.
+However, machine reboot can happen to regular machines too and we encountered the same error occasionally.
+Closer investigation revealed that shutdown of regular instances due to maintenance events on the host machines can be mitigated with the live migrate option.
+Since we started using the live migrate option we have not seen the issue.
+Furthermore, \jira{DM-25818} removed the file existence check and allowed overwrite the stored file; the ticket was merged after the \texttt{w\_2020\_30} release.
+
+% getting the above errors with different tasks and data.  The file should not have existed when the job started.  If I checked after I saw the error, the file can be found in the S3 datastore. Existing files have timestamp earlier than the failed job started.
+
+\item  \textbf{Database size}
+When we scaled up the number of workers without a sufficiently large Postgres instance, we encountered database operational errors such as:
+
+\begin{lstlisting}[style=basherror]
+sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) FATAL:  remaining connection slots are reserved for non-replication superuser connections
+\end{lstlisting}
+
+and
+
+\begin{lstlisting}[style=basherror]
+Failed to build graph: (psycopg2.errors.ConfigurationLimitExceeded) temporary file size exceeds temp_file_limit (1025563kB)
+\end{lstlisting}
+
+As the number of simultaneous connections increased, it was expected that the Postgres instance needed to scale up.
+These errors disappeared once the machine CPUs, memory, or the database flags such as \texttt{max\_connections} or \texttt{temp\_file\_limit} of the database instance were increased.
+
+\item  \textbf{Other database issues}
+There were more kinds of database operational errors, such as:
+
+\begin{lstlisting}[style=basherror]
+  File "/opt/lsst/software/stack/conda/miniconda3-py37_4.8.2/envs/lsst-scipipe-1a1d771/lib/python3.7/site-packages/sqlalchemy/engine/default.py", line 590, in do_execute
+    cursor.execute(statement, parameters)
+psycopg2.OperationalError: server closed the connection unexpectedly
+        This probably means the server terminated abnormally
+        before or while processing the request.
+\end{lstlisting}
+
+\begin{lstlisting}[style=basherror]
+sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) could not connect to server: No such file or directory
+	Is the server running locally and accepting
+	connections on Unix domain socket "/var/run/cloud-sql-proxy/light-team-275220:us-central1:drp-rc2-w30/.s.PGSQL.5432"?
+\end{lstlisting}
+
+Theese errors appeared to reduce with a larger database size per maximum simultaneous processes, but did not disappear completely.
+We continue to investigate this issue.
+
+
+\item  \textbf{Other rare transient errors}
+For example, we occasionally saw
+\begin{lstlisting}[style=basherror]
+urllib3.exceptions.ProtocolError: ('Connection aborted.', OSError(0, 'Error'))
+botocore.exceptions.ConnectionClosedError: Connection was closed before we received a valid response
+\end{lstlisting}
+It was very rare and working as expected.
+
+\end{enumerate}
+
+
+\section{Cost Analysis}
+On GCP, the daily billing data can be exported to a BigQuery dataset and analysis can be done through SQL queries.
+
+\subsection{GCS}
+The GCS charge is dominated by the data storage cost, which is \$0.02 per GB per month for standard storage.
+Storing 10 TB of the HSC-RC2 outputs costs \$200 per month.
+As we operate completely within the GCP in the same region, there is no egress charge.
+If we transferred 10 TB out of Google Cloud, it would cost around \$1110.
+For each run of HSC-RC2 workflow, the operations usage was typically less than \$4.
+
+\subsection{Cloud SQL}
+A PostgreSQL instance with 10 vCPUs, 65 GB of memory, and 15 GB of SSD storage was used and cost around \$23 per day while we ran the tests.
+Storage capacity can be incrementally increased as needed.
+
+\subsection{Compute}
+Table \ref{tab:runSummary} summarizes the compute cost of running the HSC-RC2 workflow in different setups.
+The workflow wall time was likely dominated by non-deterministic factors such as which jobs happened to fail and the size of the rescue workflow, therefore not very meaningful currently.
+Instances were also underutilized during to the manual part of the workflow.
+For example, the HTCondor cluster was left idle while the rescue workflow was made.
+We have not optimized the overall usage.
+Based on our limited tests, using N2 gave some performance boost with lower cost.
+Each run using preemptible N2 workers cost about \$390.
+
+\subsection{Cost projection}
+We use the full run of the HSC-RC2 dataset with preemptible N2 workers to extrapolate the cost.
+For each processing run through the DRP workflow, the total cost was roughly \$390 (GCP) + \$46 (Cloud SQL for 2 days) + \$17 (GCS) = \$453.
+Note that it included all 3 tracts of the HSC-RC2 dataset, which was 4.5 times larger than the single-tract run used for cost analysis in \citeds{DMTN-137} with regard to the input raw CCD images.
+With the dataset size in consideration, the run on GCP was roughly 6\% more expensive than the estimate cost in \citeds{DMTN-137}.
+However, factors such as the database size, machine setups, manual intervention, and the rescue workflow can easily cause more than 10\% of differences in cost.
+For example, in the AWS PoC we did not have a rescue workflow and only used the runs without failures.
+Less clock time implied less cost from the database.
+If we only considered 1 day of Cloud SQL usage, the cost would be about the same as the estimated cost on AWS.
+In other words, the cost differences on GCP and on AWS were not significant in our test runs so far.
+
+
+\section{Summary}
+Using a similar system architecture from the AWS PoC \citedsp{DMTN-137}, we were able to conduct DRP test runs with a recent DM stack on GCP.
+The number of simultaneous jobs peaked at 1600, the largest we have tested in the cloud environments so far.
+Based on our test runs, the estimated cost on GCP is about the same as the estimate on AWS.

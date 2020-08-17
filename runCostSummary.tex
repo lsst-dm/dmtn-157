@@ -1,0 +1,23 @@
+\begin{table}
+\tiny
+\centering
+\begin{tabular} {|c|c|c|c|c|c|}
+\hline
+Run & Setup & Max CPUs & Workflow walltime & Cumulative job time & Compute cost \\
+\hline
+20200731T011149+20200802T164424 & regular N1 workers     & 800  & 55 hrs & 308 days & \$1592 \\
+20200804T005441+20200806T041934 & preemptible N1 workers & 1600 & 36 hrs & 275 days, 22 hrs & \$459  \\
+20200806T215620+20200808T170615 & preemptible N2 workers & 1600 & 25 hrs & 213 days, 10 hrs & \$390  \\
+20200811T172329                 & regular N2 workers     & 800  & 31 hrs & 300 days, 2 hrs  & \$1191 \\
+
+20200814T002816+20200816T060623 & preemptible N2 workers & 1600 & 29 hrs & 208 days, 22 hrs & \$388 \\
+\hline
+\end{tabular}
+\caption{
+Run summary of the HSC-RC2 workflow with different setups.
+The workflow wall time only includes Pegasus records, and may be dominated by random job failures and the rescue graph.
+The costs are overestimates.
+The Postgres instance size was increased between the 20200802T164424 run and the 20200804T005441 run; it stayed the same afterwards.
+}
+\label{tab:runSummary}
+\end{table}

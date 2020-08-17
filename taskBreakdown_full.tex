@@ -1,0 +1,28 @@
+\begin{table}
+\centering
+\begin{tabular} {|r|r|r|r|r|}
+\hline
+{Task}&{Total Count}&{Count1}&{Count2}&{Mean Runtime (sec)} \\ \hline
+Init    &    & 1 & 1 & 80.0 \\
+IsrTask & 30278  & 30278 & 1 & 55.0 \\
+CharacterizeImageTask & 30278& 30277 & 1& 129.2 \\
+CalibrateTask & 30278 & 30277 & 1& 74.7 \\
+MakeWarpTask & 20182 & 20180 & 2& 74.0 \\
+CompareWarpAssembleCoaddTask & 1180 & 1178 & 2 & 700.3 \\
+DetectCoaddSourcesTask & 1180 & 1178 & 2 & 105.2 \\
+MergeDetectionsTask & 236 & 234 & 2 & 143.5 \\
+DeblendCoaddSourcesSingleTask & 1180 & 1170 & 10 & 651.3 \\
+MeasureMergedCoaddSourcesTask & 1180 & 1170 & 10 & 4426.7 \\
+MergeMeasurementsTask & 236 & 234 & 2 & 40.7 \\
+ForcedPhotCoaddTask & 1180 & 1170 & 10 & 6327.9 \\
+\hline
+\end{tabular}
+\caption{
+Example task breakdown of the HSC-RC2 workflow.
+The mean runtime is the time spent on the resource as seen by Condor DAGMan in the 20200804T005441 + 20200806T041934 run using regular \texttt{n1-standard-8} machines.
+Count 1 is the count from the first submission 20200804T005441; Count 2 is the count from the second, rescue submission 20200806T041934.
+One IsrTask failed in the first submission and was retried in the second submission.
+The software stack was \texttt{w\_2020\_30}.
+}
+\label{tab:taskBreakdownFullW30}
+\end{table}
