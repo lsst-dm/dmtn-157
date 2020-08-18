@@ -30,8 +30,8 @@ Google Compute Engine (GCE) deployed via Terraform provides the compute resource
 HTCondor is the underlying workload management system for batch jobs.
 Pegasus is used on top of HTCondor for workflow submission and monitoring.
 The HTCondor pool is automatically scaled with the load via a Managed Instance Group.
-The HTCondor execute machines can be either regular VMs or Preemptible VMs.
-HTCondor Annex is an alternative to acquire cloud compute resources, but we did not use HTCondor Annex in this PoC due to time constraints.
+The HTCondor execute machines, or workers, can be either on-demand VMs or Preemptible VMs.
+HTCondor Annex is an alternative to acquire cloud compute resources, but we did not use HTCondor Annex yet in this PoC due to time constraints (Sect \ref{sec:future}).
 The stackdriver-based Cloud Monitoring and the fluentd-based Cloud Logging are turned on in the HTCondor cluster.
 Pipeline logs are also sent to Cloud Logging, so we can search and examine logs in the Logs Viewer for troubleshooting.
 (Note that the logging is not fully integrated yet, but is already useful.)
@@ -42,7 +42,7 @@ Pipeline logs are also sent to Cloud Logging, so we can search and examine logs 
 \subsection{Test runs}
 
 Similar to \citeds{DMTN-137}, we first executed the \texttt{ci\_hsc} workflow, scaled up to process one tract HSC-RC2 dataset (\jira{DM-11345}), and then the full HSC-RC2 dataset.
-For this PoC, execution involved some manual intervention steps.
+So far, execution involved some manual intervention steps and has not been fully automated yet.
 The overall steps were: Butler repo setup, QuantumGraph generation, workflow generation, and job execution.
 To create a Butler repo on GCP after creating the GCS bucket and the PostgresSQL database, the bootstrap script at \url{https://github.com/lsst-dm/gen3-hsc-rc2} was run from the Verification Cluster located at NCSA to transfer the data to the GCS bucket and populate the Butler repo.
 We did not optimize this step and it took around 40 hours for the full HSC-RC2 repo.
@@ -53,6 +53,7 @@ In the Generation 3 Middleware, each executable unit is represented by a Quantum
 For the execution workflow, we added one initialization job and translated Quanta into jobs in the Pegasus format with one-to-one mapping.
 For simplicity we considered all jobs of MakeWarpTask, CompareWarpAssembleCoaddTask, DeblendCoaddSourcesSingleTask, and MeasureMergedCoaddSourcesTask as large-memory jobs and required 30GB of memory.
 Pegasus also added other necessary jobs to the execution workflow, such as data transfer of Quantum files and log files.
+We used the submit node as the staging site, in the same manner as the AWS PoC \citedsp{DMTN-137}.
 
 With the LSST software stack version \texttt{w\_2020\_30}, the tract \texttt{tract=9615} contains 26688 PipelineTask Quanta.
 Table \ref{tab:taskBreakdownW30} shows an example run; this is comparable to Table 1 in \citeds{DMTN-137} and most differences were likely resulted from the LSST software stack version differences.
@@ -68,7 +69,7 @@ We excluded patches that were not covered in all filters; this was a workaround 
 The pipeline configurations can be found in \url{https://github.com/lsst-dm/google-poc-drp}.
 When the workflow did not finish fully in one submission, we made a rescue workflow to run in another submission.
 The rescue workflow only contained failed jobs or their dependents.
-Making the rescue workflow required a manual step using a temporary patch in the \texttt{pipe\_base} package (\jira{DM-25809}).
+Making the rescue workflow required a manual step using a temporary patch in the \texttt{pipe\_base} package (\jira{DM-25809}), and took around 12 hours on one CPU.
 Table \ref{tab:taskBreakdownFullW30} shows an example for the full HSC-RC2 workflow.
 
 %\input{taskBreakdown_full_w30}
@@ -83,13 +84,13 @@ The same HSC-RC2 workflow was run with multiple setups:
 
 \begin{enumerate}
 \item
-Using regular N1 VMs as workers.  Maximum 800 CPUs simultaneously.
+Using on-demand N1 VMs as workers. Maximum 800 CPUs (100 VMs) simultaneously.
 \item
-Using preemptible N1 VMs as workers. Maximum 1600 CPUs simultaneously.
+Using on-demand N2 VMs as workers. Maximum 800 CPUs (100 VMs) simultaneously.
 \item
-Using preemptible N2 VMs as workers. Maximum 1600 CPUs simultaneously.
+Using preemptible N1 VMs as workers. Maximum 1600 CPUs (200 VMs) simultaneously.
 \item
-Using regular N2 VMs as workers. Maximum 800 CPUs simultaneously.
+Using preemptible N2 VMs as workers. Maximum 1600 CPUs (200 VMs) simultaneously.
 \end{enumerate}
 
 Table \ref{tab:runSummary} summarizes the compute time of the runs.
@@ -111,8 +112,8 @@ PermissionError: Forbidden HEAD operation error occurred. Verify s3:ListBucket a
 However, the permission setup was the same for all jobs but only a very small fraction of jobs encountered this.
 Butler did a HeadObject to check if an object existed before attempting to upload.
 If the object did not exist it expected a 404 error.
-At the time we used \texttt{v20} stack and did not retry failed HTTP requests.
-(A request-level retry was added afterwards.)
+At the time we used the \texttt{v20} stack and did not retry failed HTTP requests.
+(A request-level retry using the \texttt{backoff} library was added by Dom Zippilli afterwards.)
 A Google Cloud Support Ticket was filed to investigate the root cause, and concluded that there were transient issues at the IAM server during the same timeframe.
 The instability of the IAM server was fixed on July 22.
 We have not seen this error since.
@@ -178,7 +179,7 @@ sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) could not connect t
 	connections on Unix domain socket "/var/run/cloud-sql-proxy/light-team-275220:us-central1:drp-rc2-w30/.s.PGSQL.5432"?
 \end{lstlisting}
 
-Theese errors appeared to reduce with a larger database size per maximum simultaneous processes, but did not disappear completely.
+These errors appeared to reduce with a larger database size per maximum simultaneous processes, but did not disappear completely.
 We continue to investigate this issue.
 
 
@@ -220,13 +221,23 @@ Each run using preemptible N2 workers cost about \$390.
 We use the full run of the HSC-RC2 dataset with preemptible N2 workers to extrapolate the cost.
 For each processing run through the DRP workflow, the total cost was roughly \$390 (GCP) + \$46 (Cloud SQL for 2 days) + \$17 (GCS) = \$453.
 Note that it included all 3 tracts of the HSC-RC2 dataset, which was 4.5 times larger than the single-tract run used for cost analysis in \citeds{DMTN-137} with regard to the input raw CCD images.
-With the dataset size in consideration, the run on GCP was roughly 6\% more expensive than the estimate cost in \citeds{DMTN-137}.
+With the dataset size in consideration, the run on GCP was roughly 6\% more expensive than the estimated cost in \citeds{DMTN-137}.
 However, factors such as the database size, machine setups, manual intervention, and the rescue workflow can easily cause more than 10\% of differences in cost.
 For example, in the AWS PoC we did not have a rescue workflow and only used the runs without failures.
 Less clock time implied less cost from the database.
 If we only considered 1 day of Cloud SQL usage, the cost would be about the same as the estimated cost on AWS.
-In other words, the cost differences on GCP and on AWS were not significant in our test runs so far.
+In other words, the cost differences on GCP and on AWS were not significant in our test runs.
 
+\section{Future Improvement} \label{sec:future}
+
+Possible improvements include:
+\begin{enumerate}
+\item Use HTCondor Annex.
+\item Use high-memory machine types.
+\item Move the staging site. In this PoC we used the submit node as the staging site. Bektesevic et al. found that moving the staging to S3 can lead to better performance and reduce cost by 40-60 percent.
+\item Improve failure recovery. New stack has some overwriting features. We can also supply a shutdown script to handle the preemption.
+\item Improve efficiency of the scripts and automate the manual parts of the execution
+\end{enumerate}
 
 \section{Summary}
 Using a similar system architecture from the AWS PoC \citedsp{DMTN-137}, we were able to conduct DRP test runs with a recent DM stack on GCP.
