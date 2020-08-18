@@ -7,15 +7,8 @@
   basicstyle= \tiny \ttfamily
 }
 
-
-\section{Introduction}
-
-In spring 2020, we started the second Proof of Concept (PoC) engagement with the Google Cloud team; see \citeds{DMTN-150} for the plans.
-This DMTN reports the Data Release Production (DRP) part of the project.
-The goal is to run batch jobs on preemptible instances and perform cost analysis for the Interim Data Facility (pre-operations production) scale and for the 10-year Operations scale.
-
-
-\section{System Architecture and Technology Stack}
+\section{DRP Processing} \label{sec:drp}
+\subsection{System Architecture and Technology Stack}
 
 The overall system architecture is the same as in the AWS PoC; see \citeds{DMTN-137}.
 The LSST Science Pipelines Software Stack contains the applications for image processing and analysis.
@@ -37,9 +30,9 @@ Pipeline logs are also sent to Cloud Logging, so we can search and examine logs 
 (Note that the logging is not fully integrated yet, but is already useful.)
 
 
-\section{Execution Results}
+\subsection{Execution Results}
 
-\subsection{Test runs}
+\subsubsection{Test runs}
 
 Similar to \citeds{DMTN-137}, we first executed the \texttt{ci\_hsc} workflow, scaled up to process one tract HSC-RC2 dataset (\jira{DM-11345}), and then the full HSC-RC2 dataset.
 So far, execution involved some manual intervention steps and has not been fully automated yet.
@@ -98,7 +91,7 @@ Non-preemptible instances were used as HTCondor master and submit nodes.
 \input{runCostSummary.tex}
 
 
-\subsection{Experienced Errors}
+\subsubsection{Experienced Errors}
 \begin{enumerate}
 \item \textbf{GCS 403 HTTP error}.
 Since we started large scale testing in early July, random 403 errors were received when Butler made HeadObject calls:
@@ -194,21 +187,21 @@ It was very rare and working as expected.
 \end{enumerate}
 
 
-\section{Cost Analysis}
+\subsection{Cost Analysis}
 On GCP, the daily billing data can be exported to a BigQuery dataset and analysis can be done through SQL queries.
 
-\subsection{GCS}
+\subsubsection{GCS}
 The GCS charge is dominated by the data storage cost, which is \$0.02 per GB per month for standard storage.
 Storing 10 TB of the HSC-RC2 outputs costs \$200 per month.
 As we operate completely within the GCP in the same region, there is no egress charge.
 If we transferred 10 TB out of Google Cloud, it would cost around \$1110.
 For each run of HSC-RC2 workflow, the operations usage was typically less than \$4.
 
-\subsection{Cloud SQL}
+\subsubsection{Cloud SQL}
 A PostgreSQL instance with 10 vCPUs, 65 GB of memory, and 15 GB of SSD storage was used and cost around \$23 per day while we ran the tests.
 Storage capacity can be incrementally increased as needed.
 
-\subsection{Compute}
+\subsubsection{Compute}
 Table \ref{tab:runSummary} summarizes the compute cost of running the HSC-RC2 workflow in different setups.
 The workflow wall time was likely dominated by non-deterministic factors such as which jobs happened to fail and the size of the rescue workflow, therefore not very meaningful currently.
 Instances were also underutilized during to the manual part of the workflow.
@@ -217,7 +210,7 @@ We have not optimized the overall usage.
 Based on our limited tests, using N2 gave some performance boost with lower cost.
 Each run using preemptible N2 workers cost about \$390.
 
-\subsection{Cost projection}
+\subsubsection{Cost projection}
 We use the full run of the HSC-RC2 dataset with preemptible N2 workers to extrapolate the cost.
 For each processing run through the DRP workflow, the total cost was roughly \$390 (GCP) + \$46 (Cloud SQL for 2 days) + \$17 (GCS) = \$453.
 Note that it included all 3 tracts of the HSC-RC2 dataset, which was 4.5 times larger than the single-tract run used for cost analysis in \citeds{DMTN-137} with regard to the input raw CCD images.
@@ -228,7 +221,7 @@ Less clock time implied less cost from the database.
 If we only considered 1 day of Cloud SQL usage, the cost would be about the same as the estimated cost on AWS.
 In other words, the cost differences on GCP and on AWS were not significant in our test runs.
 
-\section{Future Improvement} \label{sec:future}
+\subsection{Future Improvement} \label{sec:future}
 
 Possible improvements include:
 \begin{enumerate}
@@ -239,7 +232,7 @@ Possible improvements include:
 \item Improve efficiency of the scripts and automate the manual parts of the execution
 \end{enumerate}
 
-\section{Summary}
+\subsection{Summary}
 Using a similar system architecture from the AWS PoC \citedsp{DMTN-137}, we were able to conduct DRP test runs with a recent DM stack on GCP.
 The number of simultaneous jobs peaked at 1600, the largest we have tested in the cloud environments so far.
 Based on our test runs, the estimated cost on GCP is about the same as the estimate on AWS.

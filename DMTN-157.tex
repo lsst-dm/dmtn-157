@@ -11,7 +11,7 @@
 %\input{aglossary.tex}
 %\makeglossaries
 
-\title{Report of Google Cloud Proof of Concept on DRP}
+\title{Report of Google Cloud Proof of Concept 2020}
 
 % Optional subtitle
 % \setDocSubtitle{A subtitle}
@@ -29,7 +29,7 @@ Hsin-Fang Chiang
 % \setDocCurator{The Curator of this Document}
 
 \setDocAbstract{%
-Report of the DRP part of the new Google Cloud Proof-of-Concept project
+Report of the new Google Cloud Proof-of-Concept project
 }
 
 % Change history defined here.
@@ -50,7 +50,12 @@ Report of the DRP part of the new Google Cloud Proof-of-Concept project
 
 % ADD CONTENT HERE
 % You can also use the \input command to include several content files.
-\input{body.tex}
+\section{Introduction}
+
+In spring 2020, we started the second Proof of Concept (PoC) engagement with the Google Cloud team; see \citeds{DMTN-150} for the plans.
+Section \ref{sec:drp} reports on the Data Release Production (DRP) processing in running batch jobs on preemptible instances and perform cost analysis
+
+\input{drp.tex}
 
 \appendix
 % Include all the relevant bib files.
