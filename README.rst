@@ -3,14 +3,14 @@
 .. image:: https://github.com/lsst-dm/dmtn-157/workflows/CI/badge.svg
    :target: https://github.com/lsst-dm/dmtn-157/actions/
 
-##############################################
-Report of Google Cloud Proof of Concept on DRP
-##############################################
+############################################
+Report of Google Cloud Proof of Concept 2020
+############################################
 
 DMTN-157
 ========
 
-Report of the DRP part of the new Google Cloud Proof-of-Concept project
+Report of the second Google Cloud Proof-of-Concept project
 
 Links
 =====

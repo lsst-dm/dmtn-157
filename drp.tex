@@ -223,15 +223,20 @@ In other words, the cost differences on GCP and on AWS were not significant in o
 
 \subsection{Future Improvement} \label{sec:future}
 
-Possible improvements include:
+As the HSC-RC2 dataset is much smaller than the original target size, we will continue to scale up the data volume.
+
+Other possible improvements include:
 \begin{enumerate}
 \item Use HTCondor Annex.
 \item Use high-memory machine types.
 \item Add native GCS Butler datastore rather than using its S3 interface.
-\item Move the staging site. In this PoC we used the submit node as the staging site. Bektesevic et al. found that moving the staging to S3 can lead to better performance and reduce cost by 40-60 percent.
+\item Move the staging site. In this PoC we used the submit node as the staging site. \citet{Bektesevic2020} found that moving the staging to S3 can lead to better performance and reduce cost by 40-60 percent.
 \item Improve failure recovery and eventually use retry features from the workflow manager. Newer version of the stack has some overwriting features.
 \item Supply a shutdown script to handle the machine preemption. This might mean a pipetask feature to clean up the unfinished work.
-\item Improve efficiency of the scripts and automate the manual parts of the execution
+\item Improve efficiency of the scripts and automate the manual parts of the execution.
+
+
+
 \end{enumerate}
 
 \subsection{Summary}
