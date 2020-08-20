@@ -173,6 +173,9 @@ sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) could not connect t
 \end{lstlisting}
 
 These errors appeared to reduce with a larger database size per maximum simultaneous processes, but did not disappear completely.
+Currently, Butler expects a long-lived database connection during pipeline execution \jira{DM-26302}, which might be related to this issue.
+We also see errors from the rate limit of the number of Cloud SQL Admin API calls per 100 seconds.
+When more worker instances are added to the HTCondor cluster by the instance group autoscaling, there can be a surge of such Cloud SQL Admin API calls as the Cloud SQL Proxy starts in each instance.
 We continue to investigate this issue.
 
 
@@ -232,8 +235,9 @@ Other possible improvements include:
 \item Add native GCS Butler datastore rather than using its S3 interface.
 \item Move the staging site. In this PoC we used the submit node as the staging site. \citet{Bektesevic2020} found that moving the staging to S3 can lead to better performance and reduce cost by 40-60 percent.
 \item Improve failure recovery and eventually use retry features from the workflow manager. Newer version of the stack has some overwriting features.
-\item Supply a shutdown script to handle the machine preemption. This might mean a pipetask feature to clean up the unfinished work.
+\item Supply a shutdown script to handle the machine preemption (\jira{DM-26131}). This might mean a pipetask feature to clean up the unfinished work.
 \item Improve efficiency of the scripts and automate the manual parts of the execution.
+\item Fully integrate pipeline logs into Google Logging.
 
 
 
