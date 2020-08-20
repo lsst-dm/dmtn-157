@@ -1,0 +1,218 @@
+\section{Data Transfer}\label{sec:dataxfer}
+
+The goal of this part of the proof of concept was to demonstrate operational-level transfers of pixel data from hosts in Chile to Google Cloud.
+In particular, we wanted to show that high bandwidths could be achieved with parallel transfers across multiple machines as well as low latencies.
+
+Previously \citep{DMTN-125}, images had been transferred similarly via a shared 10~Gbit/sec connection to the public Internet using the \texttt{gsutil} tool.
+A net transfer bandwidth of 1.5~Gbit/sec was achieved, but long startup times of over 5~sec made it infeasible to use this same mechanism for production.
+
+This proof of concept attempted to do better in two ways: first, by using the Google Cloud Storage API directly to better control the upload process and reuse existing TCP connections and, second, by configuring a dedicated private interconnection between the Rubin Observatory private long-haul network and the Google Cloud network, avoiding the public Internet.
+
+\subsection{Experimental Setup}
+
+\subsubsection{Software}
+
+A test harness script was written in Python.
+This script does the following:
+\begin{itemize}
+\item Parses command line arguments
+\item Uses \texttt{fork} to spawn one or more child processes, each of which independently execute the steps below
+\item Configures an uploader instance to connect to a storage destination
+\item At configured intervals after a given start time:
+  \begin{itemize}
+  \item Copies a representative FITS file from disk to \texttt{/tmp}
+  \item Compresses the FITS file in \texttt{/tmp} using \texttt{fpack}
+  \item Uploads the resulting \texttt{.fz} file to the storage destination
+  \end{itemize}
+\item Waits for all child processes to terminate
+\item Enters an infinite loop awaiting manual termination
+\end{itemize}
+
+This software is available from \url{https://github.com/lsst-dm/google-poc-drp/tree/master/apxfr}.
+
+A comparison was done between various compression options.
+Uncompressed, the data to be transferred is 75,582,720~bytes.
+\texttt{gzip -1} takes 1.45~sec (mean of 5 measurements) to compress the data to 22,622,249~bytes.
+Copying the data and running \texttt{fpack} using the default tiled Rice compression takes 0.35~sec (mean of 5 measurements) to compress the data to 15,137,280~bytes.
+\texttt{fpack} compression was thus used for all transfers.
+
+\subsubsection{Network Configuration}
+
+As prior tests had found that using a shared outbound network from the La~Serena data center as well as traversing the public Internet to reach Google Cloud services led to significant variation in data transfer times, for this proof of concept a private interconnect was established between the Rubin Observatory long-haul network and the Google Cloud network.
+The two networks shared a common point of presence at the Equinix colocation facility in Miami, so it was relatively easy to arrange and configure a 10~Gbit/sec connection there.
+We gratefully acknowledge significant assistance from Google personnel in encouraging Equinix to create the interconnect in a short timeframe and giving clear directions for configuration.
+
+The network links used for the tests therefore comprised:
+\begin{itemize}
+\item Local area network switches in the Base data center (10~Gbit/sec per machine)
+\item Main router in the Base data center
+\item Rubin long-haul network segments from La~Serena to Miami (100~Gbit/sec)
+\item Dedicated interconnect in Miami (10~Gbit/sec)
+\item Google Cloud internal network from Miami to us-central1 region in Iowa
+\end{itemize}
+
+A Cloud Router and VLAN were configured in the Google Cloud to advertise the Google VPC network for the proof of concept project over the interconnect via BGP.
+A range of private IP addresses for the Google Cloud Storage API endpoint was configured into the Cloud Router as well so that routing to those addresses was guaranteed to traverse the desired links.
+Those private IP addresses were configured into container or machine \texttt{/etc/hosts} files so that the endpoint domain name (\texttt{storage.googleapis.com}) did not need to be changed in the client software.
+
+Note that the maximum transmission unit (MTU) size for the dedicated interconnect link is limited to 1440~bytes by the Google router.
+Jumbo frames were not available on this link.
+
+The measured (via \texttt{ping}) time to the Miami exit router is 158~milliseconds.
+The measured (via \texttt{ping}) time to a virtual machine on the Cloud VPC network was 194~milliseconds.
+The measured (via Google's \texttt{perfdiag} tool) connection time to Google's storage server for this network is 200~milliseconds.
+
+\subsubsection{TCP Configuration}
+
+The machines used for testing were configured to maximize TCP throughput given the very high bandwidth-delay product (10~Gbit/sec $\times$ 200~millisec $=$ 250~MB) for the network.
+In particular, the following \texttt{sysctl} variables were set:
+\begin{itemize}
+\item \texttt{net.core.rmem\_max = 536870912}
+\item \texttt{net.core.wmem\_max = 536870912}
+\item \texttt{net.ipv4.no\_pmtu\_disc = 0}
+\item \texttt{net.ipv4.tcp\_adv\_win\_scale = 1}
+\item \texttt{net.ipv4.tcp\_congestion\_control = htcp}
+\item \texttt{net.ipv4.tcp\_rmem = 4096 87380 536870912}
+\item \texttt{net.ipv4.tcp\_slow\_start\_after\_idle = 0}
+\item \texttt{net.ipv4.tcp\_wmem = 4096 87380 536870912}
+\end{itemize}
+
+Path MTU discovery is required because the machines and LAN are otherwise configured for jumbo frames.
+
+Window scaling is necessary to use large windows to avoid waiting for acknowledgements; the increased \texttt{rmem} and \texttt{wmem} values set the maximum window size to be very large.
+An attempt to find an appropriate window size was attempted using the \texttt{iperf3} tool, but all specified window sizes seemed to perform worse than the default, so no explicit tuning was done here.
+
+H-TCP is an optimized congestion control algorithm for high speed networks with high latency.
+
+Disabling TCP slow start after idle allows a single connection to maintain maximum throughput even for bursty transmissions.
+An attempt was made to use TCP keepalive options at the application level to maximize performance over a reused connection, but setting the \texttt{HTTPConnection.default\_socket\_options} did not seem to have any useful effect, so this was abandoned in favor of setting the \texttt{net.ipv4.tcp\_slow\_start\_after\_idle = 0} parameter mentioned above.
+This reduced transfer times from about 2.5~seconds to about 1~second.
+
+\subsubsection{Kubernetes and Bare Metal}
+
+The transfer software harness was intended to be run from a Docker container deployed under the management of Kubernetes.
+Scaling the deployment would be simple, with a variety of options for constraining node placement and avoiding disruption to other services.
+Logs could be collected from the cluster for analysis.
+
+When this was found to cause excessive overhead, testing reverted to running on the "bare metal" nodes directly from a local shell.
+(Note that these were the same nodes in the Kubernetes cluster, just accessed differently.)
+
+\subsection{Procedure}
+
+The harness script was run with options as follows:
+\begin{itemize}
+\item \texttt{--destination gsapi://bucketname/path}
+\item \texttt{--numexp 5 or 10} (for statistics and to see if performance improved with the number of transfers)
+\item \texttt{--interval 17} (to simulate the interval between exposures for ComCam and LSSTCam)
+\item \texttt{--compress} (to use \texttt{fpack} as explained above)
+\item \texttt{--private} (when running inside a container; not needed on bare metal)
+\item \texttt{--ccds varying}
+\item \texttt{--starttime varying}
+\end{itemize}
+
+A start time a few minutes in the future was selected for each run, whether on a single node, multiple nodes, or in Kubernetes, to ensure that all harness processes had started and were synchronized for the first transfer.
+
+The log messages from the script were captured, either via redirection of \texttt{stderr} or by a \texttt{fluentd}/ElasticSearch log capture mechanism.
+These were searched for the string ``\texttt{End transfer}'' and the length in seconds of the transfer was extracted from those lines.
+Note that the (constant) compression time is not included in these measurements.
+
+Since latency to the delivery of the final pixel is the key performance metric in terms of the delivery of Alerts, the maximum transfer time is highlighted, along with a simple conversion to average bandwidth in bytes/sec by dividing this into the total bytes transferred.
+Minimum and mean transfer times are also reported to give a sense of the distribution.
+
+It was determined that the first of a sequence of transfers took substantially longer than the subsequent ones.
+Initially, this was attributed to authentication overhead.
+Downloading a file during initialization, before the first transfer, to ``prime'' the authentication did speed things up a bit, but initial connections were still substantially slower (approximately 3~seconds).
+It is likely that this can be ameliorated by doing an \textit{upload} before the first measured transfer, but all analysis instead simply ignored the first transfer.
+
+Attempts were made to run tests while the networks and nodes were otherwise unused and quiescent, but it was not possible to rule out interference from local network traffic in the La~Serena switches and router.
+As a result, it is not necessarily possible to compare timings from one set of tests to another, but it is believed that comparisons within a set of tests are meaningful.
+
+In addition, there have been reports of sporadic packet loss on the Rubin long-haul network (\jira{IT-2362}).
+These could be the cause of unusually long transfers, so occasional outliers were removed from timings as described below.
+
+\subsection{Results}
+
+\subsubsection{Interconnect}
+
+It was determined that the private interconnect performed substantially better than the public Internet, as expected.
+Not only were timings better, the variation in timings was also dramatically lessened.
+
+The following measurements were for a single CCD transferred from a single node, reusing the TCP connection without slow start:
+
+\begin{tabular}{l r r}
+Connection & Private & Public \\
+\hline
+Minimum & 0.96 & 4.07 \\
+Mean & 0.98 & 4.46 \\
+\textbf{Maximum} & 1.01 & 5.02 \\
+\textbf{Bandwidth} (Mbit/sec) & 120 & 24 \\
+\end{tabular}
+
+\subsubsection{API}
+
+A comparison between the \texttt{gsutil} utility (version 4.53) and the Python Google Cloud Storage API (version 1.28.1) was performed.
+Invoking a separate \texttt{gsutil} process for each transfer, having to perform authentication each time, and being unable to reuse the connection proved to be much slower, as expected.
+Using the \texttt{gsutil cp -I} option to specify a list of URLs on \texttt{stdin} would allow connection reuse, but it forces the pathnames to be the same in the source and destination, which is inconvenient for working with the Data Butler.
+Since the same performance could be obtained with the Python API, along with more flexibility, use of \texttt{gsutil} was abandoned, and the Python API was used for all tests to Google Cloud Storage.
+
+Tests were also done using the standard \texttt{curl} utility.
+Upload using \texttt{curl} to issue an HTTP POST request took about the same amount of time (3.18~sec) as initial connections via the API.
+Note that the authentication header was preloaded with a known token in the \texttt{curl} case.
+While \texttt{curl} cannot easily be used to simulate a held-open connection with multiple files sent at intervals, it was tested in a mode where two copies of the (compressed) file were sent back-to-back.
+This took 4.04~sec, implying 0.86~sec for the second transfer.
+It is not unexpected that this might be one round-trip-time faster than the standard case with a long interval between transfers.
+
+The 1.36~second maximum time for copying, compressing, and sending a CCD directly to Google Cloud Storage via the Python API is well within the budget of 5~seconds allocated for transfer from the DAQ to distributors at the US Data Facility.
+As a result, no further investigations of custom tooling for the transfer were needed.
+
+\subsubsection{Scaling to Multiple CCDs}
+
+A sequence of runs were done on a single node using multiple processes to transfer one CCD per process.
+
+\begin{tabular}{l *{5}r}
+CCDs             & 4    & 8    & 16   & 20   & 24 \\
+\hline
+Minimum          & 0.78 & 0.77 & 0.76 & 0.78 & 0.77 \\
+Mean             & 0.96 & 0.93 & 0.95 & 1.00 & 1.02 \\
+\textbf{Maximum} & 1.12 & 1.21 & 1.53 & 1.54 & 1.93 \\
+\textbf{Bandwidth} (Mbit/sec) & 432 & 799 & 1270 & 1570 & 1500 \\
+\end{tabular}
+
+Since the maximum transfer time started to increase and the aggregate bandwidth started to decrease, no values above 24 were tested in this set.
+
+Outliers of 3.44 and 7.80 seconds, respectively, were removed from the 8 and 16 CCD tests.
+
+\subsubsection{Scaling to Multiple Nodes}
+
+\begin{tabular}{l *{6}r}
+Nodes            & 1    & 1    & 1    & 1    & 2    & 3 \\
+CCDs/Node        & 1    & 10   & 20   & 30   & 10   & 10 \\
+\hline
+Minimum          & 0.92 & 0.77 & 0.78 & 0.75 & 1.01 & 0.83 \\
+Mean             & 0.99 & 1.04 & 1.27 & 0.98 & 2.48 & 3.71 \\
+\textbf{Maximum} & 1.13 & 1.97 & 1.76 & 1.37 & 5.20 & 15.94 \\
+\textbf{Bandwidth} (Mbit/sec) & 107 & 430 & 1000 & 2660 & 335 & 228 \\
+\end{tabular}
+
+Outliers of 2.82, 2.41, and 7.22 seconds, respectively were removed from the 1/10, 1/20, and 2/10 tests.
+
+It is clear that the net bandwidth drops off drastically as more nodes are added.
+One possible explanation is that congestion is occurring in the local network.
+It is also clear that even the single-node timings, while broadly consistent within sets, have unexplained anomalies, but nevertheless they are well within the budgeted time window.
+
+\subsection{Future Work}
+
+The problem with using multiple transmitting nodes needs to be resolved.
+Potential congestion and/or packet loss in the switches and routers will be investigated.
+
+Comparisons with transmission to an object store at NCSA, the terminus of the Rubin long-haul network, will be performed.
+
+The Google Cloud destination VPC network and the storage bucket are located in Iowa, which is approximately 30~milliseconds further in network delay than South Carolina, the closest data center to Miami.
+Testing with that location may show modest speed improvements.
+
+\subsection{Conclusions}
+
+The dedicated network and private interconnect have definitely improved the speed and consistency of transfers.
+The timings from one node, even for as many as 20-30 CCDs, are well within the necessary budget.
+But the inability to use multiple hosts to transfer data limits the scalability of this solution.
+This issue would need to be resolved prior to production.
