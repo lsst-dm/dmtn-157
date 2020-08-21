@@ -10,12 +10,21 @@
 \section{DRP Processing} \label{sec:drp}
 \subsection{System Architecture and Technology Stack}
 
-The overall system architecture is the same as in the AWS PoC; see \citeds{DMTN-137}.
+\begin{figure}[h]
+\centering
+\includegraphics[width=1.0\textwidth]{HTCondor_Architecture.pdf}
+\caption{Architecture diagram of the overall system}
+\label{fig:architecture}
+\end{figure}
+
+The overall system architecture is shown in Figure \ref{fig:architecture}.
+All components are hosted on GCP except Terraform, which is infrastructure as code running from a laptop.
 The LSST Science Pipelines Software Stack contains the applications for image processing and analysis.
-A machine image based on the stack release together with other necessary software is built using Packer scripts.
+A machine image based on a recent stack release together with other necessary software is built using Packer scripts.
 The LSST Generation 3 Middleware, including Data Butler and PipelineTask framework, is used for this PoC.
-The Butler datastore is a S3 compliant storage on Google Cloud Storage (GCS); objects are accessed using the \texttt{boto3} library.
+The Butler datastore is a S3 compliant storage on GCS; objects are accessed using the \texttt{boto3} library.
 The Butler registry is a Google Cloud SQL PostgreSQL database.
+The usage of Data Butler is similar to the AWS PoC \citedsp{DMTN-137}, but the stack version is new.
 Credentials to access the GCS bucket and the PostgreSQL instance are stored in Google Secret Manager; each machine retrieves the credentials and stores them in its local environments.
 
 
@@ -32,7 +41,7 @@ Pipeline logs are also sent to Cloud Logging, so we can search and examine logs 
 
 \subsection{Execution Results}
 
-\subsubsection{Test runs}
+\subsubsection{Test Runs}
 
 Similar to \citeds{DMTN-137}, we first executed the \texttt{ci\_hsc} workflow, scaled up to process one tract HSC-RC2 dataset (\jira{DM-11345}), and then the full HSC-RC2 dataset.
 So far, execution involved some manual intervention steps and has not been fully automated yet.
@@ -44,29 +53,25 @@ We may also parallelize the ingestion process in the future.
 
 In the Generation 3 Middleware, each executable unit is represented by a Quantum, and the DRP workflow is represented as a Quantum Graph with Quanta interdependency.
 For the execution workflow, we added one initialization job and translated Quanta into jobs in the Pegasus format with one-to-one mapping.
-For simplicity we considered all jobs of MakeWarpTask, CompareWarpAssembleCoaddTask, DeblendCoaddSourcesSingleTask, and MeasureMergedCoaddSourcesTask as large-memory jobs and required 30GB of memory.
+For simplicity we considered all jobs of \texttt{MakeWarpTask}, \texttt{CompareWarpAssembleCoaddTask}, \texttt{DeblendCoaddSourcesSingleTask}, and \texttt{MeasureMergedCoaddSourcesTask} as large-memory jobs and required 30GB of memory.
 Pegasus also added other necessary jobs to the execution workflow, such as data transfer of Quantum files and log files.
 We used the submit node as the staging site, in the same manner as the AWS PoC \citedsp{DMTN-137}.
 
 With the LSST software stack version \texttt{w\_2020\_30}, the tract \texttt{tract=9615} contains 26688 PipelineTask Quanta.
 Table \ref{tab:taskBreakdownW30} shows an example run; this is comparable to Table 1 in \citeds{DMTN-137} and most differences were likely resulted from the LSST software stack version differences.
 \input{taskBreakdown_9615_w30.tex}
-%\input{taskBreakdown_v20.tex}
-%\input{runSummaryOneTract.tex}
 
 The full HSC-RC2 dataset contains 3 tracts and around 1.5TB of input data, including 767 GB of raw images.
 Currently we ignore narrow bands, so there are 404 visits in total.
 One full HSC-RC2 workflow generates around 10TB of output data.
 Using the stack version \texttt{w\_2020\_30}, the QuantumGraph generation took around 13 hours for the full HSC-RC2 dataset, resulted in 117388 Quanta in total in our test workflow.
 We excluded patches that were not covered in all filters; this was a workaround as \texttt{CompareWarpAssembleCoaddTask} did not write out empty images which were expected in the QuantumGraph workflow.
-The pipeline configurations can be found in \url{https://github.com/lsst-dm/google-poc-drp}.
+Scripts and pipeline configurations can be found in \url{https://github.com/lsst-dm/google-poc-2020/tree/master/drp}.
 When the workflow did not finish fully in one submission, we made a rescue workflow to run in another submission.
 The rescue workflow only contained failed jobs or their dependents.
 Making the rescue workflow required a manual step using a temporary patch in the \texttt{pipe\_base} package (\jira{DM-25809}), and took around 12 hours on one CPU.
 Table \ref{tab:taskBreakdownFullW30} shows an example for the full HSC-RC2 workflow.
 
-%\input{taskBreakdown_full_w30}
-%\input{taskBreakdown_full_v20}
 \input{taskBreakdown_full.tex}
 
 For the computes, we tested with GCP's first generation general-purpose machine types (N1) as well as the second generation general-purpose machine types (N2).
@@ -173,7 +178,12 @@ sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) could not connect t
 \end{lstlisting}
 
 These errors appeared to reduce with a larger database size per maximum simultaneous processes, but did not disappear completely.
-We continue to investigate this issue.
+The source of the error remains unclear.
+In the current stack, Butler expects a long-lived database connection during pipeline execution and the connection pooling is disabled which might lead to unanticipated connection churns (\jira{DM-26302}).
+We also see errors from the rate limit of the Cloud SQL Admin API calls.
+When worker instances are added to the HTCondor cluster by the instance group autoscaling, there can be a surge of such Cloud SQL Admin API calls as the Cloud SQL Proxy starts in each instance.
+It could be a quota limit or an issue in the code or configuration of the Google Cloud SQL Proxy, or something not yet considered.
+We intend to investigate the source of the issue further.
 
 
 \item  \textbf{Other rare transient errors}
@@ -194,8 +204,8 @@ On GCP, the daily billing data can be exported to a BigQuery dataset and analysi
 The GCS charge is dominated by the data storage cost, which is \$0.02 per GB per month for standard storage.
 Storing 10 TB of the HSC-RC2 outputs costs \$200 per month.
 As we operate completely within the GCP in the same region, there is no egress charge.
-If we transferred 10 TB out of Google Cloud, it would cost around \$1110.
-For each run of HSC-RC2 workflow, the operations usage was typically less than \$4.
+If we transferred 10 TB out of Google Cloud, it would cost around \$1110 in the normal rate; but there is a special offer to Internet2 Higher Education members and the National Research and Education Network (G\'{E}ANT NRENs) members, and data egress fees may be waived up to a maximum discount of 15\% of the total monthly Google Cloud fees.
+Besides storage, for each run of HSC-RC2 workflow, the operations usage was typically less than \$4.
 
 \subsubsection{Cloud SQL}
 A PostgreSQL instance with 10 vCPUs, 65 GB of memory, and 15 GB of SSD storage was used and cost around \$23 per day while we ran the tests.
@@ -210,7 +220,7 @@ We have not optimized the overall usage.
 Based on our limited tests, using N2 gave some performance boost with lower cost.
 Each run using preemptible N2 workers cost about \$390.
 
-\subsubsection{Cost projection}
+\subsubsection{Cost Comparison}
 We use the full run of the HSC-RC2 dataset with preemptible N2 workers to extrapolate the cost.
 For each processing run through the DRP workflow, the total cost was roughly \$390 (GCP) + \$46 (Cloud SQL for 2 days) + \$17 (GCS) = \$453.
 Note that it included all 3 tracts of the HSC-RC2 dataset, which was 4.5 times larger than the single-tract run used for cost analysis in \citeds{DMTN-137} with regard to the input raw CCD images.
@@ -219,9 +229,10 @@ However, factors such as the database size, machine setups, manual intervention,
 For example, in the AWS PoC we did not have a rescue workflow and only used the runs without failures.
 Less clock time implied less cost from the database.
 If we only considered 1 day of Cloud SQL usage, the cost would be about the same as the estimated cost on AWS.
-In other words, the cost differences on GCP and on AWS were not significant in our test runs.
+In other words, the cost differences on GCP and on AWS were not significant in our test runs if we only look at list pricing.
+Note that this report is not intended to cover commercial discounts and incentives which might change the pricing conclusion significantly.
 
-\subsection{Future Improvement} \label{sec:future}
+\subsection{Future Work} \label{sec:future}
 
 As the HSC-RC2 dataset is much smaller than the original target size, we will continue to scale up the data volume.
 
@@ -232,14 +243,16 @@ Other possible improvements include:
 \item Add native GCS Butler datastore rather than using its S3 interface.
 \item Move the staging site. In this PoC we used the submit node as the staging site. \citet{Bektesevic2020} found that moving the staging to S3 can lead to better performance and reduce cost by 40-60 percent.
 \item Improve failure recovery and eventually use retry features from the workflow manager. Newer version of the stack has some overwriting features.
-\item Supply a shutdown script to handle the machine preemption. This might mean a pipetask feature to clean up the unfinished work.
+\item Supply a shutdown script to handle the machine preemption (\jira{DM-26131}). This might mean a pipetask feature to clean up the unfinished work.
 \item Improve efficiency of the scripts and automate the manual parts of the execution.
+\item Fully integrate pipeline logs into Google Logging.
 
 
 
 \end{enumerate}
 
-\subsection{Summary}
+\subsection{Conclusions}
 Using a similar system architecture from the AWS PoC \citedsp{DMTN-137}, we were able to conduct DRP test runs with a recent DM stack on GCP.
+We utilized HTCondor and multiple Google Cloud products, including Compute Engine, Cloud Storage, Cloud SQL, and Operations Suite.
 The number of simultaneous jobs peaked at 1600, the largest we have tested in the cloud environments so far.
 Based on our test runs, the estimated cost on GCP is about the same as the estimate on AWS.
