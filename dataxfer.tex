@@ -3,7 +3,7 @@
 The goal of this part of the proof of concept was to demonstrate operational-level transfers of pixel data from hosts in Chile to Google Cloud.
 In particular, we wanted to show that high bandwidths could be achieved with parallel transfers across multiple machines as well as low latencies.
 
-Previously \citep{DMTN-125}, images had been transferred similarly via a shared 10~Gbit/sec connection to the public Internet using the \texttt{gsutil} tool.
+Previously \citedsp{DMTN-125}, images had been transferred similarly via a shared 10~Gbit/sec connection to the public Internet using the \texttt{gsutil} tool.
 A net transfer bandwidth of 1.5~Gbit/sec was achieved, but long startup times of over 5~sec made it infeasible to use this same mechanism for production.
 
 This proof of concept attempted to do better in two ways: first, by using the Google Cloud Storage API directly to better control the upload process and reuse existing TCP connections and, second, by configuring a dedicated private interconnection between the Rubin Observatory private long-haul network and the Google Cloud network, avoiding the public Internet.
