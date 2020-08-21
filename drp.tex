@@ -10,12 +10,21 @@
 \section{DRP Processing} \label{sec:drp}
 \subsection{System Architecture and Technology Stack}
 
-The overall system architecture is the same as in the AWS PoC; see \citeds{DMTN-137}.
+\begin{figure}[h]
+\centering
+\includegraphics[width=1.0\textwidth]{HTCondor_Architecture.pdf}
+\caption{Architecture diagram of the overall system}
+\label{fig:architecture}
+\end{figure}
+
+The overall system architecture is shown in Figure \ref{fig:architecture}.
+All components are hosted on Google Cloud Platform (GCP) except Terraform, which is infrastructure as code running from a laptop.
 The LSST Science Pipelines Software Stack contains the applications for image processing and analysis.
-A machine image based on the stack release together with other necessary software is built using Packer scripts.
+A machine image based on a recent stack release together with other necessary software is built using Packer scripts.
 The LSST Generation 3 Middleware, including Data Butler and PipelineTask framework, is used for this PoC.
 The Butler datastore is a S3 compliant storage on Google Cloud Storage (GCS); objects are accessed using the \texttt{boto3} library.
 The Butler registry is a Google Cloud SQL PostgreSQL database.
+The usage of Data Butler is similar to the AWS PoC \citedsp{DMTN-137}, but the stack version is new.
 Credentials to access the GCS bucket and the PostgreSQL instance are stored in Google Secret Manager; each machine retrieves the credentials and stores them in its local environments.
 
 
@@ -173,10 +182,12 @@ sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) could not connect t
 \end{lstlisting}
 
 These errors appeared to reduce with a larger database size per maximum simultaneous processes, but did not disappear completely.
-Currently, Butler expects a long-lived database connection during pipeline execution \jira{DM-26302}, which might be related to this issue.
-We also see errors from the rate limit of the number of Cloud SQL Admin API calls per 100 seconds.
-When more worker instances are added to the HTCondor cluster by the instance group autoscaling, there can be a surge of such Cloud SQL Admin API calls as the Cloud SQL Proxy starts in each instance.
-We continue to investigate this issue.
+The source of the error remains unclear.
+In the current stack, Butler expects a long-lived database connection during pipeline execution and the connection pooling is disabled which might lead to unanticipated connection churns (\jira{DM-26302}).
+We also see errors from the rate limit of the Cloud SQL Admin API calls.
+When worker instances are added to the HTCondor cluster by the instance group autoscaling, there can be a surge of such Cloud SQL Admin API calls as the Cloud SQL Proxy starts in each instance.
+It could be a quota limit or an issue in the code or configuration of the Google Cloud SQL Proxy, or something not yet considered.
+We intend to investigate the source of the issue further.
 
 
 \item  \textbf{Other rare transient errors}
@@ -197,8 +208,8 @@ On GCP, the daily billing data can be exported to a BigQuery dataset and analysi
 The GCS charge is dominated by the data storage cost, which is \$0.02 per GB per month for standard storage.
 Storing 10 TB of the HSC-RC2 outputs costs \$200 per month.
 As we operate completely within the GCP in the same region, there is no egress charge.
-If we transferred 10 TB out of Google Cloud, it would cost around \$1110.
-For each run of HSC-RC2 workflow, the operations usage was typically less than \$4.
+If we transferred 10 TB out of Google Cloud, it would cost around \$1110 in the normal rate; but there is a special offer to Internet2 Higher Education members and the National Research and Education Network (G\'{E}ANT NRENs) members, and data egress fees may be waived up to a maximum discount of 15\% of the total monthly Google Cloud fees.
+Besides storage, for each run of HSC-RC2 workflow, the operations usage was typically less than \$4.
 
 \subsubsection{Cloud SQL}
 A PostgreSQL instance with 10 vCPUs, 65 GB of memory, and 15 GB of SSD storage was used and cost around \$23 per day while we ran the tests.
@@ -222,7 +233,8 @@ However, factors such as the database size, machine setups, manual intervention,
 For example, in the AWS PoC we did not have a rescue workflow and only used the runs without failures.
 Less clock time implied less cost from the database.
 If we only considered 1 day of Cloud SQL usage, the cost would be about the same as the estimated cost on AWS.
-In other words, the cost differences on GCP and on AWS were not significant in our test runs.
+In other words, the cost differences on GCP and on AWS were not significant in our test runs if we only look at list pricing.
+Note that this report is not intended to cover commercial discounts and incentives which might change the pricing conclusion significantly.
 
 \subsection{Future Improvement} \label{sec:future}
 
