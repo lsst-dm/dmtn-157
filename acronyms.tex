@@ -1,10 +1,11 @@
 \addtocounter{table}{-1}
-\begin{longtable}{|p{0.145\textwidth}|p{0.8\textwidth}|}\hline
+\begin{longtable}{p{0.145\textwidth}p{0.8\textwidth}}\hline
 \textbf{Acronym} & \textbf{Description}  \\\hline
 
+ &  \\\hline
 API & Application Programming Interface \\\hline
 AWS & Amazon Web Services \\\hline
-Butler & A middleware component for persisting and retrieving image datasets (raw or processed), calibration reference data, and catalogs. \\\hline
+BGP &  Border Gateway Protocol \\\hline
 CCD & Charge-Coupled Device \\\hline
 CPU & Central Processing Unit \\\hline
 ComCam & The commissioning camera is a single-raft, 9-CCD camera that will be installed in LSST during commissioning, before the final camera is ready. \\\hline
@@ -12,37 +13,29 @@ DAQ & Data Acquisition System \\\hline
 DM & Data Management \\\hline
 DMTN & DM Technical Note \\\hline
 DRP & Data Release Production \\\hline
-Data Release Production & An episode of (re)processing all of the accumulated LSST images, during which all output DR data products are generated. These episodes are planned to occur annually during the LSST survey, and the processing will be executed at the Archive Center. This includes Difference Imaging Analysis, generating deep Coadd Images, Source detection and association, creating Object and Solar System Object catalogs, and related metadata. \\\hline
 FITS & Flexible Image Transport System \\\hline
 GB & Gigabyte \\\hline
+GCE & Google Compute Engine \\\hline
+GCP & Google Cloud Platform \\\hline
 GCS & Google Cloud Storage \\\hline
 HSC & Hyper Suprime-Cam \\\hline
 HTTP & HyperText Transfer Protocol \\\hline
+IAM & Identity and Access Management \\\hline
 IDF & Interim Data Facility \\\hline
 IP & Internet Protocol \\\hline
+IT & Information Technology \\\hline
 LAN & Local Area Network \\\hline
 LSST & Legacy Survey of Space and Time (formerly Large Synoptic Survey Telescope) \\\hline
 MB & MegaByte \\\hline
+MTU & Maximum Transmission Unit \\\hline
 NCSA & National Center for Supercomputing Applications \\\hline
-PipelineTask & A special kind of Task that can read its inputs and write its outputs using a Butler, in addition to being able to have them passed in and out directly as Python objects. PipelineTasks may be connected together dynamically and executed by a generic workflow system. PipelineTasks typically (but not always) delegate most of their work to nested regular Tasks. \\\hline
 S3 & (Amazon) Simple Storage Service  \\\hline
 SQL & Structured Query Language \\\hline
 SSD & Solid-State Disk \\\hline
-Science Pipelines & The library of software components and the algorithms and processing pipelines assembled from them that are being developed by DM to generate science-ready data products from LSST images. The Pipelines may be executed at scale as part of LSST Prompt or Data Release processing, or pieces of them may be used in a standalone mode or executed through the LSST Science Platform. The Science Pipelines are one component of the LSST Software Stack. \\\hline
-Software Stack & Often referred to as the LSST Stack, or just The Stack, it is the collection of software written by the LSST Data Management Team to process, generate, and serve LSST images, transient alerts, and catalogs. The Stack includes the LSST Science Pipelines, as well as packages upon which the DM software depends. It is open source and publicly available. \\\hline
 TB & TeraByte \\\hline
 TCP & Transmission Control Protocol \\\hline
-Task & Tasks are the basic unit of code re-use in the LSST Stack. They perform a well defined, logically contained piece of functionality. Tasks come standard with configuration, logging, processing metadata, and debugging features. For further details, see How to Write a Task in the source code documentation.  Tasks can be nested, providing a natural way to structure - and configure - high level algorithms that delegate work to lower-level algorithms. \\\hline
 US & United States \\\hline
-Verification & The process of evaluating the design, including hardware and software - to ensure the requirements have been met;  verification (of requirements) is performed by test, analysis, inspection, and/or demonstration \\\hline
-algorithm & A computational implementation of a calculation or some method of processing. \\\hline
-configuration & A task-specific set of configuration parameters, also called a 'config'. The config is read-only; once a task is constructed, the same configuration will be used to process all data. This makes the data processing more predictable: it does not depend on the order in which items of data are processed. This is distinct from arguments or options, which are allowed to vary from one task invocation to the next. \\\hline
-metric & A measurable quantity which may be tracked. A metric has a name, description, unit, references, and tags (which are used for grouping). A metric is a scalar by definition. See also: aggregate metric, model metric, point metric. \\\hline
-monitoring & In DM QA, this refers to the process of collecting, storing, aggregating and visualizing metrics. \\\hline
-patch & An quadrilateral sub-region of a sky tract, with a size in pixels chosen to fit easily into memory on desktop computers. \\\hline
-pipeline & A configured sequence of software tasks (Stages) to process data and generate data products. Example: Association Pipeline. \\\hline
-stack & a grouping, usually in layers (hence stack), of software packages and services to achieve a common goal. Often providing a higher level set of end user oriented services and tools \\\hline
+VLAN &  Virtual Local Area Network \\\hline
+VPC &  Virtual Private Cloud \\\hline
 stdin & standard input \\\hline
-tract & A portion of sky, a spherical convex polygon, within the LSST all-sky tessellation (sky map). Each tract is subdivided into sky patches. \\\hline
-transient & A transient source is one that has been detected on a difference image, but has not been associated with either an astronomical object or a solar system body. \\\hline
 \end{longtable}
