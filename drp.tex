@@ -34,7 +34,7 @@ HTCondor is the underlying workload management system for batch jobs.
 Pegasus is used on top of HTCondor for workflow submission and monitoring.
 The HTCondor pool is automatically scaled with the load via a Managed Instance Group.
 The HTCondor execute machines, or workers, can be either on-demand VMs or Preemptible VMs.
-HTCondor Annex is an alternative to acquire cloud compute resources, but we did not use HTCondor Annex yet in this PoC due to time constraints (Sect \ref{sec:future}).
+HTCondor Annex is an alternative to acquire cloud compute resources, but we did not use HTCondor Annex yet in this PoC due to time constraints (\secref{sec:future}).
 The stackdriver-based Cloud Monitoring and the fluentd-based Cloud Logging are turned on in the HTCondor cluster.
 Pipeline logs are also sent to Cloud Logging, so we can search and examine logs in the Logs Viewer for troubleshooting.
 
