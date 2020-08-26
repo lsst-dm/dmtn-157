@@ -25,7 +25,8 @@ The LSST Generation 3 Middleware, including Data Butler and PipelineTask framewo
 The Butler datastore is a S3 compliant storage on GCS; objects are accessed using the \texttt{boto3} library.
 The Butler registry is a Google Cloud SQL PostgreSQL database.
 The usage of Data Butler is similar to the AWS PoC \citedsp{DMTN-137}, but the stack version is new.
-Credentials to access the GCS bucket and the PostgreSQL instance are stored in Google Secret Manager; each machine retrieves the credentials and stores them in its local environments.
+Credentials of the GCS bucket and the PostgreSQL instance are stored in Google Secret Manager.
+In the startup process of each machine, the credentials are retrieved and stored in its local environments, which are used to access the GCS bucket and the PostgreSQL instance.
 
 
 Google Compute Engine (GCE) deployed via Terraform provides the compute resources.
@@ -36,7 +37,6 @@ The HTCondor execute machines, or workers, can be either on-demand VMs or Preemp
 HTCondor Annex is an alternative to acquire cloud compute resources, but we did not use HTCondor Annex yet in this PoC due to time constraints (Sect \ref{sec:future}).
 The stackdriver-based Cloud Monitoring and the fluentd-based Cloud Logging are turned on in the HTCondor cluster.
 Pipeline logs are also sent to Cloud Logging, so we can search and examine logs in the Logs Viewer for troubleshooting.
-(Note that the logging is not fully integrated yet, but is already useful.)
 
 
 \subsection{Execution Results}
@@ -53,7 +53,7 @@ We may also parallelize the ingestion process in the future.
 
 In the Generation 3 Middleware, each executable unit is represented by a Quantum, and the DRP workflow is represented as a Quantum Graph with Quanta interdependency.
 For the execution workflow, we added one initialization job and translated Quanta into jobs in the Pegasus format with one-to-one mapping.
-For simplicity we considered all jobs of \texttt{MakeWarpTask}, \texttt{CompareWarpAssembleCoaddTask}, \texttt{DeblendCoaddSourcesSingleTask}, and \texttt{MeasureMergedCoaddSourcesTask} as large-memory jobs and required 30GB of memory.
+For simplicity we considered all jobs of \texttt{MakeWarpTask}, \texttt{CompareWarpAssembleCoaddTask}, \texttt{DeblendCoaddSourcesSingleTask}, and \texttt{MeasureMergedCoaddSourcesTask} as large-memory jobs and required 30GB of memory; all other jobs required 2 GB.
 Pegasus also added other necessary jobs to the execution workflow, such as data transfer of Quantum files and log files.
 We used the submit node as the staging site, in the same manner as the AWS PoC \citedsp{DMTN-137}.
 
