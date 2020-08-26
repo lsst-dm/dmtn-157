@@ -22,7 +22,7 @@ All components are hosted on GCP except Terraform, which is infrastructure as co
 The LSST Science Pipelines Software Stack contains the applications for image processing and analysis.
 A machine image based on a recent stack release together with other necessary software is built using Packer scripts.
 The LSST Generation 3 Middleware, including Data Butler and PipelineTask framework, is used for this PoC.
-The Butler datastore is a S3 compliant storage on GCS; objects are accessed using the \texttt{boto3} library.
+The Butler datastore uses S3-interface-compliant storage on GCS; objects are accessed using the \texttt{boto3} library.
 The Butler registry is a Google Cloud SQL PostgreSQL database.
 The usage of Data Butler is similar to the AWS PoC \citedsp{DMTN-137}, but the stack version is new.
 Credentials of the GCS bucket and the PostgreSQL instance are stored in Google Secret Manager.
@@ -35,20 +35,20 @@ Pegasus is used on top of HTCondor for workflow submission and monitoring.
 The HTCondor pool is automatically scaled with the load via a Managed Instance Group.
 The HTCondor execute machines, or workers, can be either on-demand VMs or Preemptible VMs.
 HTCondor Annex is an alternative to acquire cloud compute resources, but we did not use HTCondor Annex yet in this PoC due to time constraints (\secref{sec:future}).
-The stackdriver-based Cloud Monitoring and the fluentd-based Cloud Logging are turned on in the HTCondor cluster.
-Pipeline logs are also sent to Cloud Logging, so we can search and examine logs in the Logs Viewer for troubleshooting.
+The stackdriver-based Cloud Monitoring and the fluentd-based Cloud Logging services are turned on in the HTCondor cluster.
+Pipeline logs are also sent to Cloud Logging so we can search and examine logs in the Logs Viewer for troubleshooting.
 
 
 \subsection{Execution Results}
 
 \subsubsection{Test Runs}
 
-Similar to \citeds{DMTN-137}, we first executed the \texttt{ci\_hsc} workflow, scaled up to process one tract HSC-RC2 dataset (\jira{DM-11345}), and then the full HSC-RC2 dataset.
+Similar to \citeds{DMTN-137}, we first executed the \texttt{ci\_hsc} workflow, scaled up to process one tract of the HSC-RC2 dataset (\jira{DM-11345}), and then the full HSC-RC2 dataset.
 So far, execution involved some manual intervention steps and has not been fully automated yet.
 The overall steps were: Butler repo setup, QuantumGraph generation, workflow generation, and job execution.
 To create a Butler repo on GCP after creating the GCS bucket and the PostgresSQL database, the bootstrap script at \url{https://github.com/lsst-dm/gen3-hsc-rc2} was run from the Verification Cluster located at NCSA to transfer the data to the GCS bucket and populate the Butler repo.
 We did not optimize this step and it took around 40 hours for the full HSC-RC2 repo.
-It can be improved by copying the data to the GCS first and creating the Butler repo from GCE.
+It can be improved by copying the data to GCS first and creating the Butler repo from GCE.
 We may also parallelize the ingestion process in the future.
 
 In the Generation 3 Middleware, each executable unit is represented by a Quantum, and the DRP workflow is represented as a Quantum Graph with Quanta interdependency.
@@ -74,9 +74,9 @@ Table \ref{tab:taskBreakdownFullW30} shows an example for the full HSC-RC2 workf
 
 \input{taskBreakdown_full.tex}
 
-For the computes, we tested with GCP's first generation general-purpose machine types (N1) as well as the second generation general-purpose machine types (N2).
+For the compute nodes, we tested with GCP's first generation general-purpose machine types (N1) as well as the second generation general-purpose machine types (N2).
 N2 provides better price-performanance and is used in the IDF quotes.
-More specifically, the N1 machine \texttt{n1-standard-8} with 8 vCPUs and 30 GB of memory, and the N2 machine \texttt{n2-standard-8} with 8 vCPUs and 32 GB of memory were used.
+More specifically, the N1 machine \texttt{n1-standard-8} with 8 vCPUs and 30 GB of memory and the N2 machine \texttt{n2-standard-8} with 8 vCPUs and 32 GB of memory were used.
 
 The same HSC-RC2 workflow was run with multiple setups:
 
@@ -112,7 +112,7 @@ Butler did a HeadObject to check if an object existed before attempting to uploa
 If the object did not exist it expected a 404 error.
 At the time we used the \texttt{v20} stack and did not retry failed HTTP requests.
 (A request-level retry using the \texttt{backoff} library was added by Dom Zippilli afterwards.)
-A Google Cloud Support Ticket was filed to investigate the root cause, and concluded that there were transient issues at the IAM server during the same timeframe.
+A Google Cloud Support Ticket was filed to investigate the root cause and concluded that there were transient issues at the IAM server during the same timeframe.
 The instability of the IAM server was fixed on July 22.
 We have not seen this error since.
 
@@ -137,7 +137,7 @@ lsst.daf.butler.registry._exceptions.ConflictingDefinitionError: A database cons
 In the scenario that a pipeline job was killed after partial outputs were written due to a machine shutdown, the follow-up process would redo the job and attempt to write all outputs.
 Butler did not allow duplicate datasets nor overwriting existing datasets, hence a conflict error occurred.
 This was expected and understood on preemptible machines; \jira{DM-26131} discusses how to handle preemption notice with a possible shutdown script and complete cleanup actions before the instance stops.
-However, machine reboot can happen to regular machines too and we encountered the same error occasionally.
+However, machine reboot can happen to regular machines too, and we encountered the same error occasionally.
 Closer investigation revealed that shutdown of regular instances due to maintenance events on the host machines can be mitigated with the live migrate option.
 Since we started using the live migrate option we have not seen the issue.
 Furthermore, \jira{DM-25818} removed the file existence check and allowed overwrite the stored file; the ticket was merged after the \texttt{w\_2020\_30} release.
@@ -179,7 +179,7 @@ sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) could not connect t
 
 These errors appeared to reduce with a larger database size per maximum simultaneous processes, but did not disappear completely.
 The source of the error remains unclear.
-In the current stack, Butler expects a long-lived database connection during pipeline execution and the connection pooling is disabled which might lead to unanticipated connection churns (\jira{DM-26302}).
+In the current stack, Butler expects a long-lived database connection during pipeline execution and connection pooling is disabled which might lead to unanticipated connection churns (\jira{DM-26302}).
 We also see errors from the rate limit of the Cloud SQL Admin API calls.
 When worker instances are added to the HTCondor cluster by the instance group autoscaling, there can be a surge of such Cloud SQL Admin API calls as the Cloud SQL Proxy starts in each instance.
 It could be a quota limit or an issue in the code or configuration of the Google Cloud SQL Proxy, or something not yet considered.
@@ -192,7 +192,8 @@ For example, we occasionally saw
 urllib3.exceptions.ProtocolError: ('Connection aborted.', OSError(0, 'Error'))
 botocore.exceptions.ConnectionClosedError: Connection was closed before we received a valid response
 \end{lstlisting}
-It was very rare and working as expected.
+It was very rare and likely within the expected service level.
+It could potentially be mitigated by retrying the call.
 
 \end{enumerate}
 
@@ -204,8 +205,8 @@ On GCP, the daily billing data can be exported to a BigQuery dataset and analysi
 The GCS charge is dominated by the data storage cost, which is \$0.02 per GB per month for standard storage.
 Storing 10 TB of the HSC-RC2 outputs costs \$200 per month.
 As we operate completely within the GCP in the same region, there is no egress charge.
-If we transferred 10 TB out of Google Cloud, it would cost around \$1110 in the normal rate; but there is a special offer to Internet2 Higher Education members and the National Research and Education Network (G\'{E}ANT NRENs) members, and data egress fees may be waived up to a maximum discount of 15\% of the total monthly Google Cloud fees.
-Besides storage, for each run of HSC-RC2 workflow, the operations usage was typically less than \$4.
+If we transferred 10~TB out of Google Cloud, it would cost around \$1110 in the normal rate; but there is a special offer to Internet2 Higher Education members and the National Research and Education Network (G\'{E}ANT NRENs) members, and data egress fees may be waived up to a maximum discount of 15\% of the total monthly Google Cloud fees.
+Besides storage costs, for each run of the HSC-RC2 workflow the cost of read and write operations was typically less than \$4.
 
 \subsubsection{Cloud SQL}
 A PostgreSQL instance with 10 vCPUs, 65 GB of memory, and 15 GB of SSD storage was used and cost around \$23 per day while we ran the tests.
@@ -213,8 +214,8 @@ Storage capacity can be incrementally increased as needed.
 
 \subsubsection{Compute}
 Table \ref{tab:runSummary} summarizes the compute cost of running the HSC-RC2 workflow in different setups.
-The workflow wall time was likely dominated by non-deterministic factors such as which jobs happened to fail and the size of the rescue workflow, therefore not very meaningful currently.
-Instances were also underutilized during to the manual part of the workflow.
+The workflow wall time was likely dominated by non-deterministic factors such as which jobs happened to fail and the size of the rescue workflow and is therefore not very meaningful currently.
+Instances were also underutilized during the manual part of the workflow.
 For example, the HTCondor cluster was left idle while the rescue workflow was made.
 We have not optimized the overall usage.
 Based on our limited tests, using N2 gave some performance boost with lower cost.
@@ -225,7 +226,7 @@ We use the full run of the HSC-RC2 dataset with preemptible N2 workers to extrap
 For each processing run through the DRP workflow, the total cost was roughly \$390 (GCP) + \$46 (Cloud SQL for 2 days) + \$17 (GCS) = \$453.
 Note that it included all 3 tracts of the HSC-RC2 dataset, which was 4.5 times larger than the single-tract run used for cost analysis in \citeds{DMTN-137} with regard to the input raw CCD images.
 With the dataset size in consideration, the run on GCP was roughly 6\% more expensive than the estimated cost in \citeds{DMTN-137}.
-However, factors such as the database size, machine setups, manual intervention, and the rescue workflow can easily cause more than 10\% of differences in cost.
+However, factors such as the database size, machine setups, manual intervention, and the rescue workflow can easily cause a cost difference of more than 10\%.
 For example, in the AWS PoC we did not have a rescue workflow and only used the runs without failures.
 Less clock time implied less cost from the database.
 If we only considered 1 day of Cloud SQL usage, the cost would be about the same as the estimated cost on AWS.
@@ -241,8 +242,8 @@ Other possible improvements include:
 \item Use high-memory machine types.
 \item Add native GCS Butler datastore rather than using its S3 interface.
 \item Move the staging site. In this PoC we used the submit node as the staging site. \citet{Bektesevic2020} found that moving the staging to S3 can lead to better performance and reduce cost by 40-60 percent.
-\item Improve failure recovery and eventually use retry features from the workflow manager. Newer version of the stack has some overwriting features.
-\item Supply a shutdown script to handle the machine preemption (\jira{DM-26131}). This might mean a pipetask feature to clean up the unfinished work.
+\item Improve failure recovery and eventually use retry features from the workflow manager. Newer versions of the stack have some overwriting features.
+\item Supply a shutdown script to handle the machine preemption (\jira{DM-26131}). This might require adding a pipetask feature to clean up the unfinished work.
 \item Improve efficiency of the scripts and automate the manual parts of the execution.
 \item Fully integrate pipeline logs into Google Logging.
 
@@ -251,7 +252,7 @@ Other possible improvements include:
 \end{enumerate}
 
 \subsection{Conclusions}
-Using a similar system architecture from the AWS PoC \citedsp{DMTN-137}, we were able to conduct DRP test runs with a recent DM stack on GCP.
+Using a similar system architecture as the AWS PoC \citedsp{DMTN-137}, we were able to conduct DRP test runs with a recent DM stack on GCP.
 We utilized HTCondor and multiple Google Cloud products, including Compute Engine, Cloud Storage, Cloud SQL, and Operations Suite.
 The number of simultaneous jobs peaked at 1600, the largest we have tested in the cloud environments so far.
 Based on our test runs, the estimated cost on GCP is about the same as the estimate on AWS.
